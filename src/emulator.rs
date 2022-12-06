@@ -87,7 +87,7 @@ impl Emulator {
     fn _dxyn(&mut self, x: u8, y: u8, n: u8) {
         let vx = self.vx[x as usize];
         let vy = self.vx[y as usize];
-        println!("Dxyn: {vx}, {vy}, {n}");
+        // println!("Dxyn: {vx}, {vy}, {n}");
         let idx = self.ip as usize;
         let sprite = &self.memory[idx..(idx + n as usize)];
         self.screen.draw_sprite(vx, vy, sprite);
