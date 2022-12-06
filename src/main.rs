@@ -1,6 +1,8 @@
 mod bit;
 mod emulator;
+mod keypad;
 mod opcode;
+mod screen;
 
 use emulator::Emulator;
 

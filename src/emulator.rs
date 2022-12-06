@@ -1,5 +1,6 @@
-use super::bit::Bit;
+use super::keypad::Keypad;
 use super::opcode::OpCode;
+use super::screen::Screen;
 
 const FONTS: [[u8; 5]; 16] = [
     [0xF0, 0x90, 0x90, 0x90, 0xF0], // 0
@@ -22,14 +23,15 @@ const FONTS: [[u8; 5]; 16] = [
 
 pub struct Emulator {
     memory: [u8; 4096],
-    screen: [bool; 32 * 64],
-    inputs: [bool; 16],
     pc: u16,
-    index: u16,
-    stack: u16,
-    delay_timer: u8,
-    sound_timer: u8,
-    gp_vars: [u8; 16],
+    ip: u16,      // index pointer
+    dt: u8,       // delay timer
+    st: u8,       // sound timer
+    vx: [u8; 16], // general-purpose register
+    sp: u8,       // stack pointer
+    stack: [u16; 16],
+    screen: Screen,
+    keypad: Keypad,
 }
 
 impl Emulator {
@@ -39,14 +41,15 @@ impl Emulator {
 
         Self {
             memory,
-            screen: [false; 32 * 64],
-            inputs: [false; 16],
             pc: 0x200,
-            index: 0,
-            stack: 0,
-            delay_timer: 0,
-            sound_timer: 0,
-            gp_vars: [0; 16],
+            ip: 0,
+            dt: 0,
+            st: 0,
+            vx: [0; 16],
+            sp: 0,
+            stack: [0; 16],
+            screen: Screen::new(),
+            keypad: Keypad::new(),
         }
     }
 
@@ -65,96 +68,41 @@ impl Emulator {
 
     fn exec_opcode(&mut self, opcode: OpCode) {
         match opcode {
-            // clear screen
-            OpCode {
-                op: 0,
-                x: 0,
-                y: 0xE,
-                n: 0,
-                ..
-            } => self.op_clear_screen(),
-            // jump
-            OpCode { op: 1, nnn, .. } => {
-                println!("jump pc from {:#X} to {:#X}", self.pc, nnn);
-                self.pc = nnn;
-            }
-            // set register Vx
-            OpCode { op: 6, x, nn, .. } => {
-                println!("set register V{x:x} to {nn:X}");
-                self.gp_vars[x as usize] = nn;
-            }
-            // add value to register Vx
-            OpCode { op: 7, x, nn, .. } => {
-                println!("add value {nn:#X} to register V{x:x}");
-                self.gp_vars[x as usize] += nn;
-            }
-            // set index register
-            OpCode { op: 0xA, nnn, .. } => {
-                println!("set register index to {nnn:X}");
-                self.index = nnn;
-            }
-            OpCode {
-                op: 0xD, x, y, n, ..
-            } => self.op_display(x, y, n),
+            // 00E0: clear screen
+            OpCode(0, 0, 0xE, 0, _, _) => self.screen.clear(),
+            // 1NNN: jump
+            OpCode(1, .., nnn) => self.pc = nnn,
+            // 6XNN: set register Vx
+            OpCode(6, x, .., nn, _) => self.vx[x as usize] = nn,
+            // 7XNN: add value to register Vx
+            OpCode(7, x, .., nn, _) => self.vx[x as usize] += nn,
+            // ANNN: set index register
+            OpCode(0xA, .., nnn) => self.ip = nnn,
+            // DXYN: Draw
+            OpCode(0xD, x, y, n, ..) => self._dxyn(x, y, n),
             _ => (),
         }
     }
 
-    fn op_display(&mut self, x: u8, y: u8, n: u8) {
-        println!("display {x} {y} {n}");
-        let n = n as usize;
-        let idx = self.index as usize;
-        let bytes = &self.memory[idx..(idx + n)];
-        println!("disp bytes: {:?}", bytes);
-        let vx = self.gp_vars[x as usize] as usize;
-        let vy = self.gp_vars[y as usize] as usize;
-        for b in bytes {
-            let i = vx + vy * 64;
-            for j in (0..8).rev() {
-                self.screen[i + (7 - j)] = b.bit(j)
-            }
-        }
-        self.print_screen();
+    fn _dxyn(&mut self, x: u8, y: u8, n: u8) {
+        let vx = self.vx[x as usize];
+        let vy = self.vx[y as usize];
+        println!("Dxyn: {vx}, {vy}, {n}");
+        let idx = self.ip as usize;
+        let sprite = &self.memory[idx..(idx + n as usize)];
+        self.screen.draw_sprite(vx, vy, sprite);
+        self.screen.display();
     }
 
-    fn op_clear_screen(&mut self) {
-        println!("clear screen");
-        for px in self.screen.iter_mut() {
-            *px = false;
-        }
+    fn inc_pc(&mut self) {
+        self.pc += 2;
     }
 
     fn fetch_opcode(&mut self) -> OpCode {
         let b0 = self.memory[self.pc as usize];
         let b1 = self.memory[self.pc as usize + 1];
-        self.pc += 2;
+        self.inc_pc();
         OpCode::new(b0, b1)
-    }
-
-    pub fn print_memory(&self) {
-        let mem_pairs: Vec<_> = self.memory.iter().enumerate().collect();
-        let mem_chunks = mem_pairs.chunks(8);
-        for chunk in mem_chunks {
-            println!(
-                "{:#>4X}: {:>2X}, {:>2X}, {:>2X}, {:>2X}, {:>2X}, {:>2X}, {:>2X}, {:>2X}",
-                chunk[0].0,
-                chunk[0].1,
-                chunk[1].1,
-                chunk[2].1,
-                chunk[3].1,
-                chunk[4].1,
-                chunk[5].1,
-                chunk[6].1,
-                chunk[7].1
-            );
-        }
-    }
-
-    pub fn print_screen(&self) {
-        self.screen.chunks(64).for_each(|row| {
-            let s: String = row.iter().map(|&b| if b { 'x' } else { '-' }).collect();
-            println!("{}", s);
-        })
     }
 }
 
