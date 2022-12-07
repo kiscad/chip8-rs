@@ -36,12 +36,18 @@ impl Screen {
     pub fn draw_sprite(&mut self, x: u8, y: u8, sprite: &[u8]) -> bool {
         let x = x as usize;
         let y = y as usize;
+        let mut is_collison = false;
         for (j, pix8) in sprite.iter().enumerate() {
             for i in (0..8).rev() {
-                self.pixels[y + j][x + (7 - i)] = pix8.bit(i);
+                let y_wrap = (y + j) % 32;
+                let x_wrap = (x + (7 - i)) % 64;
+                let px = &mut self.pixels[y_wrap][x_wrap];
+                let px_new = (*px) ^ pix8.bit(i);
+                is_collison = (*px) && !px_new; // old pixel is earsed.
+                *px = px_new;
             }
         }
-        false // no collision
+        is_collison
     }
 
     pub fn display(&mut self) {

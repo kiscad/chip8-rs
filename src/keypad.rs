@@ -8,4 +8,8 @@ impl Keypad {
             inputs: [false; 16],
         }
     }
+
+    pub fn is_pressed(&self, key: u8) -> bool {
+        self.inputs[key as usize]
+    }
 }
